@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="BIG5">
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+		<script async defer src="https://maps.googleapis.com/maps/api/js?key=[GoogleAPI-key]&callback=initMap"></script>
+		<link rel="stylesheet" href="https://startbootstrap.com/assets/css/main.css">
+		<style>
+			#map { width: 100%; height: 500px; z-index: 90; }
+			.autocomplete { position: relative; display: inline-block; }
+			.autoItem { position: absolute; width: 405px; z-index: 99; background-color: white; opacity: 1;
+				top: 100%; left: 0; right: 0; }
+			.autoItem div { border: 1px groove; }
+			.autoItem div:hover { background-color: lightblue; }
+			.emphasized { background-color: DodgerBlue; }
+		</style>
+		<title>world</title>
+	</head>
+	<body>
+	
+	<div class="footer-mailchimp">
+	<div class="container text-center">
+	<h2>Want to know worldwide airport information?</h2>
+	<h5>Check it out to see the most update!</h5>
+	<div>
+	
+	<!---------------------------------- Setting of the input form ------------------------------------>
+		<div id= "input">
+			<form id="inputForm" autocomplete="off" action="{% url 'world:airport' %}" method = "POST">
+			<div class="input-group input-group-sm">
+					{% csrf_token %}
+					<input id="inputField" type="text" name="country" placeholder="Please input a country/region" class="form-control">
+					<span class="input-group-btn"><button type="submit" name="search" class="btn btn-secondary">Search!</button></span>
+			</div>
+				<script>
+					$("#inputForm").on("submit", function(e) {
+						e.preventDefault();
+						sendRequest();
+					});
+				</script>
+			</form>
+	</div>
+	</div>
+	</div>
+			<script>
+			
+			var countries = [];
+			var codes = [];
+			var map;
+			var markers = [];
+			var latLng;
+			
+// -----------------------------------read list of countries----------------------------------	
+			{% if country %}
+				{% for item in country %}
+					countries.push("{{item.name}}");
+					codes.push("{{item.code}}");
+				{% endfor %}
+				autocomplete(document.getElementById("inputField"), countries);
+			{% endif %}
+
+// -------------------------------- autocompletion of the input ----------------------------------
+			function autocomplete(textField, countryList) {
+				var current;
+				textField.addEventListener("input", function(e) {
+					var container, optionItem, inputValue = this.value;
+					closeLists();
+					if (!inputValue) {
+						return false;
+					}
+					current = -1;
+					container = document.createElement("DIV");
+					container.setAttribute("id", "autoList");
+					container.setAttribute("class", "autoItem");
+					this.parentNode.appendChild(container);
+					for(var i = 0; i < countryList.length; i++) {
+						if (countryList[i].replace("&#39;", "'").substr(0, inputValue.length).toLowerCase() == inputValue.toLowerCase()) {
+							optionItem = document.createElement("DIV");
+							optionItem.innerHTML = countryList[i] + "<input type='hidden' value='" + countryList[i] + "'>";
+							optionItem.addEventListener("click", function(e){
+								textField.value = this.getElementsByTagName("input")[0].value;
+								closeLists();
+							});
+							container.appendChild(optionItem);
+						}
+					}
+				});
+				
+				function closeLists(element) {
+					var options = document.getElementsByClassName("autoItem");
+					for (var i = 0; i < options.length; i++) {
+						if ((element != options[i]) && (element != textField)) {
+							options[i].parentNode.removeChild(options[i]);
+						}
+					}
+				}
+				
+				textField.addEventListener("keydown", function(e) {
+					var options = document.getElementById("autoList");
+					if (options) {
+						options = options.getElementsByTagName("div");
+						if (options) {
+							if (e.keyCode == 13) {
+								e.preventDefault();
+								if (current >= 0) {
+									options[current].click();
+								}
+							} else {
+								if (e.keyCode == 38) {
+									current--;
+								} else if (e.keyCode == 40) {
+									current++;
+								}
+								emphasize(options);
+							}
+						}
+					}
+				});
+				
+				function emphasize(options) {
+					for (var i = 0; i < options.length; i++) {
+						options[i].classList.remove("emphasized");
+					}
+					if (current >= options.length) {
+						current = 0;
+					}
+					if (current <= -1) {
+						current = options.length - 1;
+					}
+					options[current].classList.add("emphasized");
+				}
+				
+				document.addEventListener("click", function(e) {
+					closeLists(e.target);
+				});
+			}
+			
+// ----------------------- search for detail of the airport according to the input --------------
+			function sendRequest() {
+				var valid = false;
+				var code;
+				// validation of the input
+				for (var i = 0; i < countries.length; i++) {
+					if (countries[i].replace("&#39;", "'").toLowerCase() == $("#inputField").val().toLowerCase()) {
+						code = codes[i];
+						valid = true;
+					}
+				}
+				if (valid) {
+					document.getElementById("result").innerHTML = "<br><strong>Searching...</strong><br><br>";
+					document.getElementById("map").style.visibility = "hidden"
+					$.ajax({
+						url: $("#inputForm").attr('action'),
+						type: $("#inputForm").attr('method'),
+						data: {csrfmiddlewaretoken: '{{csrf_token}}',
+							   countryInput: code},
+						
+						success: function(response) {
+							result = JSON.parse(response);
+							if (result.action == 'error') {
+								document.getElementById("result").innerHTML = "<br><strong>"+ result.airportResult + "</strong>.<br><br>"; 
+							} else {
+								if (result.airportResult.length != 0) {
+									updateMap(result.airportResult);
+									document.getElementById("result").innerHTML = "<br>Airport Search for <strong>" + $("#inputField").val() + "</strong>:<br><br>"; 
+									document.getElementById("map").style.visibility = "visible"
+								} else {
+									document.getElementById("result").innerHTML = "<br>No airports can be found in <strong>"+ $("#inputField").val() + "</strong>.<br><br>"; 
+								}
+							}
+						},
+						error: function(response, message, error) {
+							alert("Error in receiving response from server: " + response.status);
+						}
+					});
+				} else {
+					alert("Please input a valid country/region.");
+					return false;
+				}				
+			}
+			
+// ------------------------------------- Showing the map ------------------------------------------			
+			// initialize the map
+			function initMap() {
+				map = new google.maps.Map(document.getElementById('map'), {});
+				document.getElementById("map").style.visibility = "hidden";
+			}
+			
+			function updateMap(airport) {
+				if (markers != null) {
+					for(var i = 0; i < markers.length; i++) {
+						markers[i].setMap(null);
+					}
+				}
+				markers = [];
+				var infowindow = new google.maps.InfoWindow();
+				var bounds = new google.maps.LatLngBounds();
+				for (var i = 0; i < airport.length; i++) {
+					latLng = new google.maps.LatLng(airport[i].latitude, airport[i].longitude);
+					bounds.extend(latLng);
+					var contentString = '<div id = "content">'+
+						'<h2>' + airport[i].name + '</h1>' +
+						'<p align="left">City: ' + airport[i].city + '</p>' +
+						'<p align="left">Local Time: ' + airport[i].localtime + '</p>' +
+						'<p align="left">Temperature: ' + airport[i].temperature + ' (Celsius)</p>' +
+						'</div>';
+
+					var marker = new google.maps.Marker({
+						position: latLng,
+						map: map
+					});
+					google.maps.event.addListener(marker, 'click', (function(marker, contentString, infowindow) {
+						return function() {
+							infowindow.setContent(contentString)
+							infowindow.open(map, marker);
+						};			
+					})(marker, contentString, infowindow));
+					markers.push(marker);
+				}
+				map.fitBounds(bounds);
+				var zoom = map.getZoom();
+				if (zoom >= 11) {
+					map.setZoom(10);
+				}
+			}
+			
+			</script>
+		</div>
+		
+		<div class="footer-mailchimp">
+		<div class="container text-center">
+		<div id="result"></div>
+		<div id="map"></div>
+		</div>
+		</div>
+	</body>
+</html>
